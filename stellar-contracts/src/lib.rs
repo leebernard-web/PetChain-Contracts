@@ -114,12 +114,34 @@ pub struct PetOwner {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Specialization {
+    GeneralPractice,
+    Surgery,
+    Dentistry,
+    Cardiology,
+    Dermatology,
+    Emergency,
+    Other,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Certification {
+    pub name: String,
+    pub issued_date: u64,
+    pub expiry_date: Option<u64>,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub struct Vet {
     pub address: Address,
     pub name: String,
     pub license_number: String,
     pub specialization: String,
+    pub specializations: Vec<Specialization>,
+    pub certifications: Vec<Certification>,
     pub verified: bool,
 }
 
@@ -1249,6 +1271,8 @@ impl PetChainContract {
             name,
             license_number: license_number.clone(),
             specialization,
+            specializations: Vec::new(&env),
+            certifications: Vec::new(&env),
             verified: false,
         };
 
@@ -1260,6 +1284,59 @@ impl PetChainContract {
             .set(&DataKey::VetLicense(license_number), &vet_address);
 
         true
+    }
+
+    pub fn add_certification(
+        env: Env,
+        vet_address: Address,
+        name: String,
+        issued_date: u64,
+        expiry_date: Option<u64>,
+    ) -> bool {
+        vet_address.require_auth();
+
+        if let Some(mut vet) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Vet>(&DataKey::Vet(vet_address.clone()))
+        {
+            let cert = Certification {
+                name,
+                issued_date,
+                expiry_date,
+            };
+            vet.certifications.push_back(cert);
+            env.storage()
+                .instance()
+                .set(&DataKey::Vet(vet_address), &vet);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn add_specialization(
+        env: Env,
+        vet_address: Address,
+        specialization: Specialization,
+    ) -> bool {
+        vet_address.require_auth();
+
+        if let Some(mut vet) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Vet>(&DataKey::Vet(vet_address.clone()))
+        {
+            if !vet.specializations.contains(specialization.clone()) {
+                vet.specializations.push_back(specialization);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::Vet(vet_address), &vet);
+            }
+            true
+        } else {
+            false
+        }
     }
 
     pub fn verify_vet(env: Env, admin: Address, vet_address: Address) -> bool {

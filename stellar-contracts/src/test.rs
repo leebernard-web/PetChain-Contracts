@@ -3307,3 +3307,228 @@ mod test {
         assert_eq!(pet_unknown_profile.gender, Gender::Unknown);
     }
 }
+
+    // === VET SPECIALIZATIONS AND CERTIFICATIONS TESTS ===
+
+    #[test]
+    fn test_add_multiple_specializations() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PetChainContract);
+        let client = PetChainContractClient::new(&env, &contract_id);
+
+        let vet = Address::generate(&env);
+        let admin = Address::generate(&env);
+
+        client.init_admin(&admin);
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Smith"),
+            &String::from_str(&env, "VET-123"),
+            &String::from_str(&env, "General"),
+        );
+
+        // Add multiple specializations
+        client.add_specialization(&vet, &Specialization::Surgery);
+        client.add_specialization(&vet, &Specialization::Dentistry);
+        client.add_specialization(&vet, &Specialization::Cardiology);
+
+        let vet_info = client.get_vet(&vet).unwrap();
+        assert_eq!(vet_info.specializations.len(), 3);
+        assert!(vet_info.specializations.contains(Specialization::Surgery));
+        assert!(vet_info.specializations.contains(Specialization::Dentistry));
+        assert!(vet_info.specializations.contains(Specialization::Cardiology));
+    }
+
+    #[test]
+    fn test_add_certification() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PetChainContract);
+        let client = PetChainContractClient::new(&env, &contract_id);
+
+        let vet = Address::generate(&env);
+        let admin = Address::generate(&env);
+
+        client.init_admin(&admin);
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Jones"),
+            &String::from_str(&env, "VET-456"),
+            &String::from_str(&env, "Surgery"),
+        );
+
+        let now = env.ledger().timestamp();
+        let expiry = now + 31536000; // 1 year from now
+
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Board Certified Surgeon"),
+            &now,
+            &Some(expiry),
+        );
+
+        let vet_info = client.get_vet(&vet).unwrap();
+        assert_eq!(vet_info.certifications.len(), 1);
+        
+        let cert = vet_info.certifications.get(0).unwrap();
+        assert_eq!(cert.name, String::from_str(&env, "Board Certified Surgeon"));
+        assert_eq!(cert.issued_date, now);
+        assert_eq!(cert.expiry_date, Some(expiry));
+    }
+
+    #[test]
+    fn test_certification_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PetChainContract);
+        let client = PetChainContractClient::new(&env, &contract_id);
+
+        let vet = Address::generate(&env);
+        let admin = Address::generate(&env);
+
+        client.init_admin(&admin);
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Brown"),
+            &String::from_str(&env, "VET-789"),
+            &String::from_str(&env, "Emergency"),
+        );
+
+        let now = 1000;
+        env.ledger().with_mut(|l| l.timestamp = now);
+
+        // Add expired certification
+        let past_expiry = now - 100;
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Expired Cert"),
+            &(now - 1000),
+            &Some(past_expiry),
+        );
+
+        // Add valid certification
+        let future_expiry = now + 1000;
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Valid Cert"),
+            &now,
+            &Some(future_expiry),
+        );
+
+        // Add certification with no expiry
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Permanent Cert"),
+            &now,
+            &None,
+        );
+
+        let vet_info = client.get_vet(&vet).unwrap();
+        assert_eq!(vet_info.certifications.len(), 3);
+
+        // Verify expired certification
+        let expired_cert = vet_info.certifications.get(0).unwrap();
+        assert_eq!(expired_cert.name, String::from_str(&env, "Expired Cert"));
+        assert!(expired_cert.expiry_date.unwrap() < now);
+
+        // Verify valid certification
+        let valid_cert = vet_info.certifications.get(1).unwrap();
+        assert_eq!(valid_cert.name, String::from_str(&env, "Valid Cert"));
+        assert!(valid_cert.expiry_date.unwrap() > now);
+
+        // Verify permanent certification
+        let permanent_cert = vet_info.certifications.get(2).unwrap();
+        assert_eq!(permanent_cert.name, String::from_str(&env, "Permanent Cert"));
+        assert!(permanent_cert.expiry_date.is_none());
+    }
+
+    #[test]
+    fn test_vet_with_specializations_and_certifications() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PetChainContract);
+        let client = PetChainContractClient::new(&env, &contract_id);
+
+        let vet = Address::generate(&env);
+        let admin = Address::generate(&env);
+
+        client.init_admin(&admin);
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Expert"),
+            &String::from_str(&env, "VET-999"),
+            &String::from_str(&env, "Multi-Specialty"),
+        );
+
+        // Add specializations
+        client.add_specialization(&vet, &Specialization::Surgery);
+        client.add_specialization(&vet, &Specialization::Dentistry);
+        client.add_specialization(&vet, &Specialization::Emergency);
+
+        // Add certifications
+        let now = env.ledger().timestamp();
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Advanced Surgery"),
+            &now,
+            &Some(now + 10000),
+        );
+        client.add_certification(
+            &vet,
+            &String::from_str(&env, "Dental Specialist"),
+            &now,
+            &None,
+        );
+
+        let vet_info = client.get_vet(&vet).unwrap();
+        
+        // Verify specializations
+        assert_eq!(vet_info.specializations.len(), 3);
+        assert!(vet_info.specializations.contains(Specialization::Surgery));
+        assert!(vet_info.specializations.contains(Specialization::Dentistry));
+        assert!(vet_info.specializations.contains(Specialization::Emergency));
+
+        // Verify certifications
+        assert_eq!(vet_info.certifications.len(), 2);
+        assert_eq!(
+            vet_info.certifications.get(0).unwrap().name,
+            String::from_str(&env, "Advanced Surgery")
+        );
+        assert_eq!(
+            vet_info.certifications.get(1).unwrap().name,
+            String::from_str(&env, "Dental Specialist")
+        );
+    }
+
+    #[test]
+    fn test_all_specialization_types() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PetChainContract);
+        let client = PetChainContractClient::new(&env, &contract_id);
+
+        let vet = Address::generate(&env);
+        let admin = Address::generate(&env);
+
+        client.init_admin(&admin);
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. AllSpec"),
+            &String::from_str(&env, "VET-ALL"),
+            &String::from_str(&env, "All"),
+        );
+
+        // Add all specialization types
+        client.add_specialization(&vet, &Specialization::GeneralPractice);
+        client.add_specialization(&vet, &Specialization::Surgery);
+        client.add_specialization(&vet, &Specialization::Dentistry);
+        client.add_specialization(&vet, &Specialization::Cardiology);
+        client.add_specialization(&vet, &Specialization::Dermatology);
+        client.add_specialization(&vet, &Specialization::Emergency);
+        client.add_specialization(&vet, &Specialization::Other);
+
+        let vet_info = client.get_vet(&vet).unwrap();
+        assert_eq!(vet_info.specializations.len(), 7);
+    }
+}
